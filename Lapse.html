@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lapse ✦ Vintage Cutout</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    :root{
+      --bg:#f6f1e7;
+      --ui:#fffdf7;
+      --accent:#d6bfa6;
+      --muted:#4a3b2c;
+    }
+    body {
+      font-family: 'Courier New', monospace;
+      background: var(--bg);
+      margin: 0; padding: 0;
+      display: flex; flex-direction: column; align-items: center;
+      color: var(--muted);
+      -webkit-font-smoothing:antialiased;
+    }
+    header {
+      padding: 18px;
+      font-size: 1.6rem;
+      letter-spacing: 2px;
+      font-weight: bold;
+      color: var(--muted);
+      text-shadow: 1px 1px #fff;
+      text-align:center;
+    }
+
+    /* Controls */
+    #controls {
+      display: flex;
+      gap: 8px;
+      margin: 10px;
+      flex-wrap:wrap;
+      justify-content:center;
+      max-width: 96%;
+    }
+    select, input[type="file"], textarea, button, .smallbtn {
+      padding: 8px 10px;
+      font-family: inherit;
+      border: 1px solid #aaa;
+      background: var(--ui);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.95rem;
+    }
+    textarea { resize: vertical; min-height:42px; }
+    button:hover, .smallbtn:hover { transform: translateY(-2px); background: #f0e6d9; }
+
+    /* Canvas */
+    .canvas-wrap { width: 95vw; max-width: 640px; display:flex;justify-content:center; }
+    canvas {
+      width: 100%;
+      max-width: 600px;
+      height: auto;
+      border: 10px solid #e2d5c0;
+      border-radius: 8px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+      background: #fff;
+      display:block;
+    }
+
+    /* Shape buttons area kept simple (like you had) */
+    .y2k-buttons { margin: 8px 0; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+    .shapeBtn { font-size:18px; padding:8px 10px; border-radius:6px; background:var(--ui); border:1px solid #c9b8a4; cursor:pointer; }
+    .shapeBtn:hover { transform:translateY(-3px); background:#f6efe6; }
+
+    /* Selected shape controls */
+    #shapeControls { margin-top:10px; display:flex; gap:8px; align-items:center; justify-content:center; flex-wrap:wrap; }
+    #shapeControls input[type="range"] { width:150px; }
+
+    footer { margin:14px 0 28px 0; color:#666; font-size:0.9rem; }
+    @media (max-width:480px){
+      header{ font-size:1.25rem; padding:12px; }
+      #controls{ gap:6px; }
+      .shapeBtn{ font-size:16px; padding:6px 8px; }
+      #shapeControls input[type="range"]{ width:110px; }
+    }
+  </style>
+</head>
+<body>
+  <header>✦ Lapse – Vintage Cutout Generator ✦</header>
+
+  <div id="controls">
+    <input type="file" id="upload" accept="image/png">
+    <select id="paperSelect" title="Paper type">
+      <option value="plain">Plain Paper</option>
+      <option value="crumpled">Crumpled Paper</option>
+      <option value="noisy">Noisy Paper</option>
+      <option value="ruled">Ruled Paper</option>
+    </select>
+
+    <button id="randomCaption">✧ Random Caption</button>
+    <textarea id="captionInput" rows="2" cols="20" placeholder="Type your caption…"></textarea>
+
+    <button id="download" class="smallbtn">⬇ Download</button>
+  </div>
+
+  <div class="canvas-wrap">
+    <canvas id="canvas" width="600" height="600"></canvas>
+  </div>
+
+  <div class="y2k-buttons">
+    <button class="shapeBtn" data-shape="✦">✦</button>
+    <button class="shapeBtn" data-shape="✧">✧</button>
+    <button class="shapeBtn" data-shape="♥">♥</button>
+    <button class="shapeBtn" data-shape="☁">☁</button>
+    <button class="shapeBtn" data-shape="✿">✿</button>
+    <button class="shapeBtn" data-shape="★">★</button>
+  </div>
+
+  <!-- shape editor controls -->
+  <div id="shapeControls" style="display:none;">
+    <label style="display:flex;align-items:center;gap:6px">Scale
+      <input id="shapeScale" type="range" min="0.3" max="3.0" step="0.01" value="1">
+    </label>
+    <label style="display:flex;align-items:center;gap:6px">Rotate
+      <input id="shapeRotate" type="range" min="-180" max="180" step="1" value="0">
+    </label>
+    <label style="display:flex;align-items:center;gap:6px">Color
+      <input id="shapeColor" type="color" value="#f4a9c4">
+    </label>
+    <button id="bringFront" class="smallbtn">Bring front</button>
+    <button id="delShape" class="smallbtn">Delete</button>
+  </div>
+
+  <footer>Made by Debojeet</footer>
+
+<script>
+/* ---------- base behavior preserved (your original code) + shapes added ---------- */
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let uploadedImg = null;
+let caption = "";
+let paper = "plain";
+
+/* shapes array: { id, char, x, y, size, rot, color } - z-order is array order */
+let shapes = [];
+let selectedShapeId = null;
+let dragging = false;
+let dragOffset = {x:0,y:0};
+
+/* paper textures (kept same logic as your code) */
+const paperTextures = {
+  plain: "#fff",
+  crumpled: "#f8f5f0",
+  noisy: "#faf7f2",
+  // ruled will be drawn by lines to match your previous code
+  ruled: "#fff"
+};
+
+/* Drawing helpers - use your drawPaper + render logic as base */
+function drawPaper(){
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  if (paper === "crumpled") {
+    ctx.fillStyle = "#f6f1e7";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+  }
+  if (paper === "noisy") {
+    ctx.fillStyle = "#fdfaf4";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    // noise overlay
+    for (let i=0;i<1500;i++) {
+      ctx.fillStyle = `rgba(0,0,0,${Math.random()*0.05})`;
+      ctx.fillRect(Math.random()*canvas.width, Math.random()*canvas.height, 1, 1);
+    }
+  }
+  if (paper === "ruled") {
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = "#c2c2c2";
+    ctx.lineWidth = 1;
+    for (let y=40;y<canvas.height;y+=40) {
+      ctx.beginPath();
+      ctx.moveTo(0,y);
+      ctx.lineTo(canvas.width,y);
+      ctx.stroke();
+    }
+  }
+}
+
+/* Draw ripped image helper (kept simple, based on your earlier ripped idea) */
+function drawRippedImage(img, x, y, w, h) {
+  ctx.save();
+  ctx.beginPath();
+  // top edge jagged
+  for (let i = 0; i <= w; i += 20) {
+    let offset = (Math.random()*14)-7;
+    ctx.lineTo(x + i, y + offset);
+  }
+  // right edge
+  for (let j = 0; j <= h; j += 20) {
+    let offset = (Math.random()*14)-7;
+    ctx.lineTo(x + w + offset, y + j);
+  }
+  // bottom
+  for (let i = w; i >= 0; i -= 20) {
+    let offset = (Math.random()*14)-7;
+    ctx.lineTo(x + i, y + h + offset);
+  }
+  // left
+  for (let j = h; j >= 0; j -= 20) {
+    let offset = (Math.random()*14)-7;
+    ctx.lineTo(x + offset, y + j);
+  }
+  ctx.closePath();
+  ctx.clip();
+  ctx.drawImage(img, x, y, w, h);
+  ctx.restore();
+}
+
+/* Render everything */
+function render() {
+  drawPaper();
+
+  // draw uploaded image at fixed box (your original base used 100,100,400,400)
+  if (uploadedImg) {
+    // keep shadow like your earlier code
+    ctx.save();
+    ctx.shadowColor = "#000";
+    ctx.shadowBlur = 20;
+    // draw normal by default; if user wants ripped edges we can add a toggle later
+    // but base code had only normal draw — so keep as-is
+    ctx.drawImage(uploadedImg, 100,100,400,400);
+    ctx.restore();
+  }
+
+  // draw shapes in order
+  for (let i = 0; i < shapes.length; i++) {
+    const s = shapes[i];
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate((s.rot||0) * Math.PI/180);
+    ctx.font = `${s.size || 48}px "Courier New", monospace`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = s.color || "#333";
+    ctx.fillText(s.char, 0, 0);
+
+    // draw selection stroke for selected
+    if (s.id === selectedShapeId) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#d6bfa6";
+      // approximate bounding box
+      const box = (s.size || 48);
+      ctx.setLineDash([6,4]);
+      ctx.strokeRect(-box/1.2 -6, -box/1.2 -6, (box/1.2)*2 + 12, (box/1.2)*2 + 12);
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+
+  // caption (kept exactly like your base)
+  ctx.fillStyle = "#2e2e2e";
+  ctx.font = "20px Courier New";
+  ctx.textAlign = "center";
+  ctx.fillText(caption, canvas.width/2, canvas.height - 30 );
+}
+
+/* ---------- Upload handling (kept from your code) ---------- */
+document.getElementById("upload").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    uploadedImg = new Image();
+    uploadedImg.onload = render;
+    uploadedImg.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+/* paper select (kept) */
+document.getElementById("paperSelect").addEventListener("change", e=>{
+  paper = e.target.value;
+  render();
+});
+
+/* caption and random caption (kept) */
+document.getElementById("randomCaption").addEventListener("click", ()=>{
+  const captions = [
+    "Lost in time ✦",
+    "Paper dreams ♥",
+    "Static memories ☁",
+    "Y2K forever ✧",
+    "Fragments of past ✶"
+  ];
+  caption = captions[Math.floor(Math.random()*captions.length)];
+  document.getElementById("captionInput").value = caption;
+  render();
+});
+document.getElementById("captionInput").addEventListener("input", e=>{
+  caption = e.target.value;
+  render();
+});
+
+/* download (kept) */
+document.getElementById("download").addEventListener("click", ()=>{
+  const link = document.createElement("a");
+  link.download = "lapse_post.png";
+  link.href = canvas.toDataURL();
+  link.click();
+});
+
+/* ---------- Shape addition ---------- */
+document.querySelectorAll('.shapeBtn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const char = btn.dataset.shape || btn.textContent || '✦';
+    // place roughly center-ish
+    const s = {
+      id: 's' + Math.random().toString(36).slice(2,9),
+      char: char,
+      x: Math.random()*200 + 200,
+      y: Math.random()*200 + 150,
+      size: 64,
+      rot: (Math.random()*40 - 20),
+      color: randomPastel(),
+    };
+    shapes.push(s);
+    selectShape(s.id);
+    render();
+  });
+});
+function randomPastel(){
+  const h = Math.floor(Math.random()*360);
+  return `hsl(${h}deg 80% 75%)`;
+}
+
+/* ---------- Shape interaction: select, drag, hit test ---------- */
+function hitTestShape(px, py){
+  // top-down z-order
+  for(let i = shapes.length - 1; i >= 0; i--){
+    const s = shapes[i];
+    // approximate bounding box half-size
+    const half = (s.size || 48) * 0.6;
+    // inverse rotate test
+    const cx = s.x, cy = s.y;
+    const dx = px - cx, dy = py - cy;
+    const a = - (s.rot || 0) * Math.PI/180;
+    const rx = dx*Math.cos(a) - dy*Math.sin(a);
+    const ry = dx*Math.sin(a) + dy*Math.cos(a);
+    if (Math.abs(rx) <= half && Math.abs(ry) <= half) return s;
+  }
+  return null;
+}
+
+canvas.addEventListener('pointerdown', (ev)=>{
+  const rect = canvas.getBoundingClientRect();
+  const px = (ev.clientX - rect.left) * (canvas.width / rect.width);
+  const py = (ev.clientY - rect.top) * (canvas.height / rect.height);
+
+  const hit = hitTestShape(px, py);
+  if (hit) {
+    selectShape(hit.id);
+    dragging = true;
+    const s = shapes.find(x=>x.id===hit.id);
+    dragOffset.x = px - s.x;
+    dragOffset.y = py - s.y;
+    canvas.setPointerCapture(ev.pointerId);
+  } else {
+    deselectShape();
+  }
+});
+
+canvas.addEventListener('pointermove', (ev)=>{
+  if (!dragging || !selectedShapeId) return;
+  const rect = canvas.getBoundingClientRect();
+  const px = (ev.clientX - rect.left) * (canvas.width / rect.width);
+  const py = (ev.clientY - rect.top) * (canvas.height / rect.height);
+  const s = shapes.find(x=>x.id === selectedShapeId);
+  if (!s) return;
+  s.x = px - dragOffset.x;
+  s.y = py - dragOffset.y;
+  render();
+});
+
+canvas.addEventListener('pointerup', (ev)=>{
+  dragging = false;
+  try { canvas.releasePointerCapture(ev.pointerId); } catch(e) {}
+});
+
+/* ---------- Shape selection UI & controls ---------- */
+const shapeControls = document.getElementById('shapeControls');
+const shapeScale = document.getElementById('shapeScale');
+const shapeRotate = document.getElementById('shapeRotate');
+const shapeColor = document.getElementById('shapeColor');
+const bringFront = document.getElementById('bringFront');
+const delShape = document.getElementById('delShape');
+
+function selectShape(id){
+  selectedShapeId = id;
+  const s = shapes.find(x=>x.id===id);
+  if (s) {
+    shapeControls.style.display = 'flex';
+    shapeScale.value = s.size;
+    shapeRotate.value = s.rot;
+    shapeColor.value = toHex(s.color);
+  } else {
+    shapeControls.style.display = 'none';
+  }
+  render();
+}
+
+function deselectShape(){
+  selectedShapeId = null;
+  shapeControls.style.display = 'none';
+  render();
+}
+
+/* controls events */
+shapeScale.addEventListener('input', ()=>{
+  if(!selectedShapeId) return;
+  const s = shapes.find(x=>x.id===selectedShapeId);
+  if(!s) return;
+  s.size = parseFloat(shapeScale.value);
+  render();
+});
+shapeRotate.addEventListener('input', ()=>{
+  if(!selectedShapeId) return;
+  const s = shapes.find(x=>x.id===selectedShapeId);
+  if(!s) return;
+  s.rot = parseFloat(shapeRotate.value);
+  render();
+});
+shapeColor.addEventListener('input', ()=>{
+  if(!selectedShapeId) return;
+  const s = shapes.find(x=>x.id===selectedShapeId);
+  if(!s) return;
+  s.color = shapeColor.value;
+  render();
+});
+bringFront.addEventListener('click', ()=>{
+  if(!selectedShapeId) return;
+  const idx = shapes.findIndex(x=>x.id===selectedShapeId);
+  if(idx > -1){
+    const [o] = shapes.splice(idx,1);
+    shapes.push(o);
+    render();
+  }
+});
+delShape.addEventListener('click', ()=>{
+  if(!selectedShapeId) return;
+  shapes = shapes.filter(x=>x.id !== selectedShapeId);
+  selectedShapeId = null;
+  shapeControls.style.display = 'none';
+  render();
+});
+
+/* helper: convert hsl/pastel string to hex if needed (we used HSL strings) */
+function toHex(hslOrHex){
+  // if already hex (#) return
+  if(String(hslOrHex).startsWith('#')) return hslOrHex;
+  // create temp to compute
+  const tmp = document.createElement('div');
+  tmp.style.color = hslOrHex;
+  document.body.appendChild(tmp);
+  const cs = getComputedStyle(tmp).color; // rgb(...)
+  document.body.removeChild(tmp);
+  const m = cs.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+  if(!m) return '#cccccc';
+  const r = parseInt(m[1]).toString(16).padStart(2,'0');
+  const g = parseInt(m[2]).toString(16).padStart(2,'0');
+  const b = parseInt(m[3]).toString(16).padStart(2,'0');
+  return `#${r}${g}${b}`;
+}
+
+/* keyboard: delete selected */
+window.addEventListener('keydown', (e)=>{
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedShapeId){
+    shapes = shapes.filter(x=>x.id !== selectedShapeId);
+    selectedShapeId = null;
+    shapeControls.style.display = 'none';
+    render();
+  }
+});
+
+/* initial render */
+render();
+</script>
+</body>
+</html>
